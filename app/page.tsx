@@ -4,30 +4,70 @@ import { Amplify } from 'aws-amplify';
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import outputs from '../amplify_outputs.json';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 
 Amplify.configure(outputs);
 
+const queryClient = new QueryClient();
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010';
+
+function ApiDataFetcher() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['api-data'],
+    queryFn: async () => {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth_check`, {
+        headers: {
+          Authorization: `Bearer ${token}`, // 👈 ここでパスポートを提示！
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error("api error");
+      }
+      return response.json();
+    }
+  });
+
+  if (isLoading) return <p className="text-gray-500 font-bold mt-4 animate-pulse">通信中...</p>;
+  if (error) return <p className="text-red-500 font-bold mt-4">エラー: api側の準備ができていません</p>;
+
+  return (
+    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
+      <p>apiデータ: {data.message}</p>
+    </div>
+  );
+}
+
 export default function App() {
   return (
-    // Tailwindで画面全体の中央に配置し、薄いグレーの背景をつけます
-    <main className="min-h-screen flex items-center justify-center bg-gray-50">
-      <Authenticator>
-        {({ signOut, user }) => (
-          // ログイン後の画面もTailwindで綺麗に整えます
-          <div className="p-8 text-center bg-white shadow-md rounded-lg">
-            <h1 className="text-2xl font-bold mb-4">ログイン成功！</h1>
-            <p className="text-gray-700 mb-6">
-              こんにちは、<span className="font-semibold">{user?.signInDetails?.loginId}</span> さん！
-            </p>
-            <button 
-              onClick={signOut} 
-              className="px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 transition-colors"
-            >
-              サインアウト
-            </button>
-          </div>
-        )}
-      </Authenticator>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <main className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Authenticator>
+          {({ signOut, user }) => (
+            <div className="p-8 text-center bg-white shadow-md rounded-lg flex flex-col gap-4">
+              <h1 className="text-2xl font-bold">ログイン成功！</h1>
+              <p className="text-gray-700">
+                こんにちは、<span className="font-semibold">{user?.signInDetails?.loginId}</span> さん！
+              </p>
+              
+              <ApiDataFetcher />
+
+              <button 
+                onClick={signOut} 
+                className="mt-4 px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 transition-colors"
+              >
+                サインアウト
+              </button>
+            </div>
+          )}
+        </Authenticator>
+      </main>
+    </QueryClientProvider>
   );
 }
