@@ -17,12 +17,46 @@ const queryClient = new QueryClient();
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3010";
 
+interface AuthAttributes {
+  sub: string;
+  email?: string;
+  nickname?: string;
+}
+
+// ユーザー同期用関数
+const syncUser = async (attributes: AuthAttributes) => { // 👈 ここを修正！
+  const session = await fetchAuthSession();
+  const token = session.tokens?.idToken?.toString();
+
+  await fetch(`${API_BASE_URL}/api/v1/sync_user`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      cognito_sub: attributes.sub,
+      email: attributes.email,
+      nickname: attributes.nickname,
+    }),
+  });
+};
+
 function UserProfile() {
   const { data: attributes, isLoading } = useQuery({
     queryKey: ["user-attributes"],
     queryFn: async () => {
-      // fetchUserAttributesを呼ぶだけで現在のユーザーの属性が取れます
       const attrs = await fetchUserAttributes();
+      // 属性が取れたら即座に同期APIを叩く
+      if (attrs) {
+        try {
+          // fetchUserAttributesの戻り値とAuthAttributesを合わせるためのキャスト
+          await syncUser(attrs as AuthAttributes);
+          console.log("同期成功！");
+        } catch (e) {
+          console.error("同期失敗:", e);
+        }
+      }
       return attrs;
     },
   });
@@ -30,7 +64,6 @@ function UserProfile() {
   if (isLoading)
     return <span className="animate-pulse text-gray-400">...</span>;
 
-  // nicknameが設定されていない場合のフォールバックも用意しておくと安全です
   return (
     <span className="font-semibold text-blue-600">
       {attributes?.nickname || "ニックネーム未設定"}
@@ -47,7 +80,7 @@ function ApiDataFetcher() {
 
       const response = await fetch(`${API_BASE_URL}/api/v1/auth_check`, {
         headers: {
-          Authorization: `Bearer ${token}`, // 👈 ここでパスポートを提示！
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       });
@@ -60,15 +93,9 @@ function ApiDataFetcher() {
   });
 
   if (isLoading)
-    return (
-      <p className="text-gray-500 font-bold mt-4 animate-pulse">通信中...</p>
-    );
+    return <p className="text-gray-500 font-bold mt-4 animate-pulse">通信中...</p>;
   if (error)
-    return (
-      <p className="text-red-500 font-bold mt-4">
-        エラー: api側の準備ができていません
-      </p>
-    );
+    return <p className="text-red-500 font-bold mt-4">エラー: api側の準備ができていません</p>;
 
   return (
     <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded text-green-800">
@@ -85,7 +112,6 @@ export default function App() {
           {({ signOut, user }) => (
             <div className="p-8 text-center bg-white shadow-md rounded-lg flex flex-col gap-4">
               <h1 className="text-2xl font-bold">ログイン成功！</h1>
-
               <p className="text-gray-700">
                 こんにちは、
                 <UserProfile /> さん！
@@ -94,9 +120,7 @@ export default function App() {
                   (ID: {user?.signInDetails?.loginId})
                 </span>
               </p>
-
               <ApiDataFetcher />
-
               <button
                 onClick={signOut}
                 className="mt-4 px-4 py-2 bg-blue-600 text-white font-medium rounded hover:bg-blue-700 transition-colors"
