@@ -17,46 +17,12 @@ const queryClient = new QueryClient();
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3010";
 
-interface AuthAttributes {
-  sub: string;
-  email?: string;
-  nickname?: string;
-}
-
-// ユーザー同期用関数
-const syncUser = async (attributes: AuthAttributes) => { // 👈 ここを修正！
-  const session = await fetchAuthSession();
-  const token = session.tokens?.idToken?.toString();
-
-  await fetch(`${API_BASE_URL}/api/v1/sync_user`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      cognito_sub: attributes.sub,
-      email: attributes.email,
-      nickname: attributes.nickname,
-    }),
-  });
-};
 
 function UserProfile() {
   const { data: attributes, isLoading } = useQuery({
     queryKey: ["user-attributes"],
     queryFn: async () => {
       const attrs = await fetchUserAttributes();
-      // 属性が取れたら即座に同期APIを叩く
-      if (attrs) {
-        try {
-          // fetchUserAttributesの戻り値とAuthAttributesを合わせるためのキャスト
-          await syncUser(attrs as AuthAttributes);
-          console.log("同期成功！");
-        } catch (e) {
-          console.error("同期失敗:", e);
-        }
-      }
       return attrs;
     },
   });
